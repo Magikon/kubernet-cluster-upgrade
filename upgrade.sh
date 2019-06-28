@@ -5,15 +5,15 @@ zone="us-central1-a"
 region="us-central1"
 disksize="100GB"
 diskType="pd-standard"
-IP1="35.192.124.25"
-IP2="35.192.124.25"
-IP3="35.192.124.25"
+IP1=<ip1>
+IP2=<ip2>
+IP3=<ip3>
 
 echo "-- Select the newest version and update the master of this version:
 -- Version upgrade time is almost 5 minutes
 --"
 mainVersion=`gcloud container get-server-config | awk 'c&&!--c;/validMasterVersions/{c=1}' | sed -n -e 's/^.*- //p'`
-#gcloud --quiet container clusters upgrade $clusterName --master --cluster-version $mainVersion
+gcloud --quiet container clusters upgrade $clusterName --master --cluster-version $mainVersion
 
 echo "-- Change names with opposite names and saves old names
 --"
