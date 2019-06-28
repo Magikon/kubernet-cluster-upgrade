@@ -73,7 +73,7 @@ done
 
 echo "-- set labels for node1
 --"
-kubectl label nodes $nodes1 whitelist=betradar
+kubectl label nodes $nodes1 foo=bar
 
 echo "-- find and delete ips from old node
 --"
@@ -99,7 +99,7 @@ done
 
 echo "-- label node2
 --"
-kubectl label nodes $nodes2 whitelist=betradar
+kubectl label nodes $nodes2 foo=bar
 
 echo "-- find and delete ips from old node
 --"
@@ -135,7 +135,7 @@ echo "-- create new fast pool
 --"
 gcloud --quiet container node-pools create $pool2 --cluster=$clusterName --disk-type=$diskType --machine-type=$machineType \
 --num-nodes=$initialNodeCount --max-nodes=$maxNodeCount --min-nodes=$minNodeCount --disk-size=$disksize --zone=$zone \
---node-labels=whitelist=betradar,nodetype=fast --node-taints=fast_node=only:NoSchedule \
+--node-labels=foo=bar,foo1=bar1 --node-taints=fast_node=only:NoSchedule \
 --metadata disable-legacy-endpoints=true --enable-autorepair --enable-autoscaling --no-enable-autoupgrade
 
 echo "-- save node's names of new pool
@@ -188,7 +188,7 @@ echo "--create review pool
 --"
 gcloud --quiet container node-pools create $pool3 --cluster=$clusterName --disk-type=$diskType --machine-type=$machineType \
 --num-nodes=$initialNodeCount --max-nodes=$maxNodeCount --min-nodes=$minNodeCount --disk-size=$disksize --zone=$zone \
---node-labels=nodetype=review --node-taints=review_node=only:NoSchedule \
+--node-labels=foo=bar --node-taints=review_node=only:NoSchedule \
 --metadata disable-legacy-endpoints=true --enable-autorepair --enable-autoscaling --no-enable-autoupgrade --preemptible
 
 echo "-- cordon old pools
