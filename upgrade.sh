@@ -1,19 +1,29 @@
 #!/bin/bash
+set -e
+#set -x
+start=`date +%s`
 
 clusterName="cluster1"
 zone="us-central1-a"
 region="us-central1"
 disksize="100GB"
 diskType="pd-standard"
-IP1=<ip1>
-IP2=<ip2>
-IP3=<ip3>
+IP1="35.192.124.25"
+IP2="35.192.124.26"
+IP3="35.192.124.27"
+
+exNatOld="[u'external-nat']"
+exNatNew="[u'External NAT']"
 
 echo "-- Select the newest version and update the master of this version:
 -- Version upgrade time is almost 5 minutes
 --"
-mainVersion=`gcloud container get-server-config | awk 'c&&!--c;/validMasterVersions/{c=1}' | sed -n -e 's/^.*- //p'`
-gcloud --quiet container clusters upgrade $clusterName --master --cluster-version $mainVersion
+# awk get line after "validMasterVersion", sed remove "- " from line
+#mainVersion=`gcloud container get-server-config | awk 'c&&!--c;/validMasterVersions/{c=1}' | sed -n -e 's/^.*- //p'`
+# find in get-server-config last valid version of master(awk get line after "validMasterVersions" and print last field)
+mainVersion=`gcloud container get-server-config | awk '/validMasterVersions/ { getline; print $NF }'`
+echo "-- convert to version " $mainVersion
+#gcloud --quiet container clusters upgrade $clusterName --master --cluster-version $mainVersion
 
 echo "-- Change names with opposite names and saves old names
 --"
@@ -33,7 +43,7 @@ do
     *review-pool*)
       pool3="reviewpool";oldpool3=$line ;;
   esac
-done < <(gcloud --quiet container node-pools list --cluster=$clusterName | awk '{if (NR!=1) {print}}' | awk '{print $1}')
+done < <(gcloud --quiet container node-pools list --cluster=$clusterName | awk '{if (NR!=1) {print $1}}')
 
 echo "-- Old names of pools is" $oldpool1 $oldpool2 $oldpool3
 echo "-- New names of pools is" $pool1 $pool2 $pool3
@@ -45,13 +55,13 @@ while IFS= read -r line
 do
   case $line in
     *diskType*)
-      diskType=$(sed -n 's/diskType: //p' <<< $line) ;;
+      diskType=$(awk '{ print $NF }' <<< $line) ;;
     *machineType*)
-      machineType=$(sed -n 's/machineType: //p' <<< $line) ;;
+      machineType=$(awk '{ print $NF }' <<< $line) ;;
     *maxNodeCount*)
-      maxNodeCount=$(sed -n 's/maxNodeCount: //p' <<< $line) ;;
+      maxNodeCount=$(awk '{ print $NF }' <<< $line) ;;
     *minNodeCount*)
-      minNodeCount=$(sed -n 's/minNodeCount: //p' <<< $line) ;;
+      minNodeCount=$(awk '{ print $NF }' <<< $line) ;;
   esac
 done < <(gcloud container node-pools describe --cluster=$clusterName $oldpool1)
 
@@ -59,9 +69,15 @@ initialNodeCount=$(kubectl get nodes -l cloud.google.com/gke-nodepool=$oldpool1 
 
 echo "-- create the new default pool - creating in about 5 minutes
 --"
+echo "gcloud --quiet container node-pools create $pool1 --cluster=$clusterName --disk-type=$diskType --machine-type=$machineType \
+--num-nodes=$initialNodeCount --max-nodes=$maxNodeCount --min-nodes=$minNodeCount --disk-size=$disksize --zone=$zone \
+--metadata disable-legacy-endpoints=true --enable-autorepair --enable-autoscaling --no-enable-autoupgrade"
+echo "--"
 gcloud --quiet container node-pools create $pool1 --cluster=$clusterName --disk-type=$diskType --machine-type=$machineType \
 --num-nodes=$initialNodeCount --max-nodes=$maxNodeCount --min-nodes=$minNodeCount --disk-size=$disksize --zone=$zone \
 --metadata disable-legacy-endpoints=true --enable-autorepair --enable-autoscaling --no-enable-autoupgrade
+
+ex=$? && if [ $ex -ne 0 ];then echo "-- last command fails with code="$ex;exit 1; fi
 
 echo "-- save node's names of new pool
 --"
@@ -73,17 +89,36 @@ done
 
 echo "-- set labels for node1
 --"
-kubectl label nodes $nodes1 foo=bar
+kubectl label nodes $nodes1 whitelist=betradar
+
+
+#gcloud compute instances describe <INSTANCE NAME> --zone=<ZONE> --format='value(networkInterfaces[].accessConfigs[].name.list())'
+#gcloud compute instances describe gke-cluster1-default-pool-3764eadc-6rw1 --format='json(networkInterfaces)'
 
 echo "-- find and delete ips from old node
 --"
-tempnode=`gcloud compute instances list | grep $IP1 | awk '{print $1}'`
-if [ ! -z "$tempnode" ];then gcloud --quiet compute instances delete-access-config $tempnode --access-config-name "external-nat";gcloud --quiet compute instances add-access-config $tempnode --access-config-name "external-nat"; fi
+tempnode=`gcloud compute instances list | awk '/'$IP1'/ {print $1}'`
+
+if [ ! -z "$tempnode" ];
+then 
+   nat=`gcloud compute instances describe $tempnode --format='value(networkInterfaces[].accessConfigs[].name.list())'`
+   if [ "$nat" == "$exNatOld" ];then exNat="external-nat"; else exNat="External NAT";fi
+   gcloud --quiet compute instances delete-access-config $tempnode --access-config-name="$exNat";
+   gcloud --quiet compute instances add-access-config $tempnode --access-config-name="$exNat"; 
+fi
 unset tempnode
+unset nat
+unset exNat
 
 echo "-- change to new"
-gcloud --quiet compute instances delete-access-config $nodes1 --access-config-name "external-nat"
-gcloud --quiet compute instances add-access-config $nodes1 --access-config-name "external-nat" --address $IP1
+
+nat=`gcloud compute instances describe $nodes1 --format='value(networkInterfaces[].accessConfigs[].name.list())'`
+if [ "$nat" == "$exNatOld" ];then exNat="external-nat"; else exNat="External NAT";fi
+
+gcloud --quiet compute instances delete-access-config $nodes1 --access-config-name="$exNat"
+gcloud --quiet compute instances add-access-config $nodes1 --access-config-name="$exNat" --address $IP1
+unset nat
+unset exNat
 
 echo "--cordon old pools
 --"
@@ -99,19 +134,36 @@ done
 
 echo "-- label node2
 --"
-kubectl label nodes $nodes2 foo=bar
+kubectl label nodes $nodes2 whitelist=betradar
 
 echo "-- find and delete ips from old node
 --"
-tempnode=`gcloud compute instances list | grep $IP2 | awk '{print $1}'`
-if [ ! -z "$tempnode" ];then gcloud --quiet compute instances delete-access-config $tempnode --access-config-name "external-nat";gcloud --quiet compute instances add-access-config $tempnode --access-config-name "external-nat"; fi
+tempnode=`gcloud compute instances list | awk '/'$IP2'/ {print $1}'`
+
+if [ ! -z "$tempnode" ];
+then 
+   nat=`gcloud compute instances describe $tempnode --format='value(networkInterfaces[].accessConfigs[].name.list())'`
+   if [ "$nat" == "$exNatOld" ];then exNat="external-nat"; else exNat="External NAT";fi   
+   gcloud --quiet compute instances delete-access-config $tempnode --access-config-name="$exNat";
+   gcloud --quiet compute instances add-access-config $tempnode --access-config-name="$exNat"; 
+
+fi
 unset tempnode
+unset nat
+unset exNat
 
 echo "-- change to new"
-gcloud --quiet compute instances delete-access-config $nodes2 --access-config-name "external-nat"
-gcloud --quiet compute instances add-access-config $nodes2 --access-config-name "external-nat" --address $IP2
 
+nat=`gcloud compute instances describe $nodes2 --format='value(networkInterfaces[].accessConfigs[].name.list())'`
+if [ "$nat" == "$exNatOld" ];then exNat="external-nat"; else exNat="External NAT";fi
 
+gcloud --quiet compute instances delete-access-config $nodes2 --access-config-name="$exNat"
+gcloud --quiet compute instances add-access-config $nodes2 --access-config-name="$exNat" --address $IP2
+unset nat
+unset exNat
+
+echo "-- delete old pools"
+gcloud --quiet container node-pools delete $oldpool1 --cluster=$clusterName
 #------------------------------------------------------------------------------------------------------------------------
 echo "-- find some params of old fast pools
 --"
@@ -119,13 +171,13 @@ while IFS= read -r line
 do
   case $line in
     *diskType*)
-      diskType=$(sed -n 's/diskType: //p' <<< $line) ;;
+      diskType=$(awk '{ print $NF }' <<< $line) ;;
     *machineType*)
-      machineType=$(sed -n 's/machineType: //p' <<< $line) ;;
+      machineType=$(awk '{ print $NF }' <<< $line) ;;
     *maxNodeCount*)
-      maxNodeCount=$(sed -n 's/maxNodeCount: //p' <<< $line) ;;
+      maxNodeCount=$(awk '{ print $NF }' <<< $line) ;;
     *minNodeCount*)
-      minNodeCount=$(sed -n 's/minNodeCount: //p' <<< $line) ;;
+      minNodeCount=$(awk '{ print $NF }' <<< $line) ;;
   esac
 done < <(gcloud container node-pools describe --cluster=$clusterName $oldpool2)
 
@@ -133,10 +185,17 @@ initialNodeCount=$(kubectl get nodes -l cloud.google.com/gke-nodepool=$oldpool2 
 
 echo "-- create new fast pool
 --"
+echo "gcloud --quiet container node-pools create $pool2 --cluster=$clusterName --disk-type=$diskType --machine-type=$machineType \
+--num-nodes=$initialNodeCount --max-nodes=$maxNodeCount --min-nodes=$minNodeCount --disk-size=$disksize --zone=$zone \
+--node-labels=whitelist=betradar,nodetype=fast --node-taints=fast_node=only:NoSchedule \
+--metadata disable-legacy-endpoints=true --enable-autorepair --enable-autoscaling --no-enable-autoupgrade"
+echo "--"
 gcloud --quiet container node-pools create $pool2 --cluster=$clusterName --disk-type=$diskType --machine-type=$machineType \
 --num-nodes=$initialNodeCount --max-nodes=$maxNodeCount --min-nodes=$minNodeCount --disk-size=$disksize --zone=$zone \
---node-labels=foo=bar,foo1=bar1 --node-taints=fast_node=only:NoSchedule \
+--node-labels=whitelist=betradar,nodetype=fast --node-taints=fast_node=only:NoSchedule \
 --metadata disable-legacy-endpoints=true --enable-autorepair --enable-autoscaling --no-enable-autoupgrade
+
+ex=$? && if [ $ex -ne 0 ];then echo "-- last command fails with code="$ex;exit 1; fi
 
 echo "-- save node's names of new pool
 --"
@@ -146,13 +205,28 @@ for node in $(kubectl get nodes -l cloud.google.com/gke-nodepool=$pool2 -o=name)
     let count+=1
 done
 
+echo "-- find and delete ips from old node
+--"
+tempnode=`gcloud compute instances list | awk '/'$IP3'/ {print $1}'`
 
-tempnode=`gcloud compute instances list | grep $IP3 | awk '{print $1}'`
-if [ ! -z "$tempnode" ];then gcloud --quiet compute instances delete-access-config $tempnode --access-config-name "external-nat";gcloud --quiet compute instances add-access-config $tempnode --access-config-name "external-nat"; fi
+if [ ! -z "$tempnode" ];
+then 
+   nat=`gcloud compute instances describe $tempnode --format='value(networkInterfaces[].accessConfigs[].name.list())'`
+   if [ "$nat" == "$exNatOld" ];then exNat="external-nat"; else exNat="External NAT";fi
+   gcloud --quiet compute instances delete-access-config $tempnode --access-config-name="$exNat";
+   gcloud --quiet compute instances add-access-config $tempnode --access-config-name="$exNat"; 
+fi
 unset tempnode
+unset nat
+unset exNat
 
-gcloud --quiet compute instances delete-access-config $nodes1 --access-config-name "external-nat"
-gcloud --quiet compute instances add-access-config $nodes1 --access-config-name "external-nat" --address $IP3
+echo "-- change to new"
+
+nat=`gcloud compute instances describe $nodes1 --format='value(networkInterfaces[].accessConfigs[].name.list())'`
+if [ "$nat" == "$exNatOld" ];then exNat="external-nat"; else exNat="External NAT";fi
+
+gcloud --quiet compute instances delete-access-config $nodes1 --access-config-name="$exNat"
+gcloud --quiet compute instances add-access-config $nodes1 --access-config-name="$exNat" --address $IP3
 
 echo "-- cordon old pools
 --"
@@ -166,19 +240,22 @@ for node in $(kubectl get nodes -l cloud.google.com/gke-nodepool=$oldpool2 -o=na
   kubectl drain --force --ignore-daemonsets --delete-local-data --grace-period=45 "$node";
 done
 
+echo "-- delete old pools"
+gcloud --quiet container node-pools delete $oldpool2 --cluster=$clusterName
 #------------------------------------------------------------------------------------------------------------------------
-echo "-- save params"
+echo "-- find some params of old review pools
+--"
 while IFS= read -r line
 do
   case $line in
     *diskType*)
-      diskType=$(sed -n 's/diskType: //p' <<< $line) ;;
+      diskType=$(awk '{ print $NF }' <<< $line) ;;
     *machineType*)
-      machineType=$(sed -n 's/machineType: //p' <<< $line) ;;
+      machineType=$(awk '{ print $NF }' <<< $line) ;;
     *maxNodeCount*)
-      maxNodeCount=$(sed -n 's/maxNodeCount: //p' <<< $line) ;;
+      maxNodeCount=$(awk '{ print $NF }' <<< $line) ;;
     *minNodeCount*)
-      minNodeCount=$(sed -n 's/minNodeCount: //p' <<< $line) ;;
+      minNodeCount=$(awk '{ print $NF }' <<< $line) ;;
   esac
 done < <(gcloud container node-pools describe --cluster=$clusterName $oldpool3)
 
@@ -186,10 +263,17 @@ initialNodeCount=$(kubectl get nodes -l cloud.google.com/gke-nodepool=$oldpool3 
 
 echo "--create review pool
 --"
+echo "gcloud --quiet container node-pools create $pool3 --cluster=$clusterName --disk-type=$diskType --machine-type=$machineType \
+--num-nodes=$initialNodeCount --max-nodes=$maxNodeCount --min-nodes=$minNodeCount --disk-size=$disksize --zone=$zone \
+--node-labels=nodetype=review --node-taints=review_node=only:NoSchedule \
+--metadata disable-legacy-endpoints=true --enable-autorepair --enable-autoscaling --no-enable-autoupgrade --preemptible"
+echo "--"
 gcloud --quiet container node-pools create $pool3 --cluster=$clusterName --disk-type=$diskType --machine-type=$machineType \
 --num-nodes=$initialNodeCount --max-nodes=$maxNodeCount --min-nodes=$minNodeCount --disk-size=$disksize --zone=$zone \
---node-labels=foo=bar --node-taints=review_node=only:NoSchedule \
+--node-labels=nodetype=review --node-taints=review_node=only:NoSchedule \
 --metadata disable-legacy-endpoints=true --enable-autorepair --enable-autoscaling --no-enable-autoupgrade --preemptible
+
+ex=$? && if [ $ex -ne 0 ];then echo "-- last command fails with code="$ex;exit 1; fi
 
 echo "-- cordon old pools
 --"
@@ -205,6 +289,8 @@ done
 
 #------------------------------------------------------------------------------------------------------------------------
 echo "-- delete old pools"
-gcloud --quiet container node-pools delete $oldpool1 --cluster=$clusterName
-gcloud --quiet container node-pools delete $oldpool2 --cluster=$clusterName
 gcloud --quiet container node-pools delete $oldpool3 --cluster=$clusterName
+
+end=`date +%s`
+
+echo $((end-start))s "left"
