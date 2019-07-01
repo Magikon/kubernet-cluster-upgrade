@@ -23,7 +23,7 @@ echo "-- Select the newest version and update the master of this version:
 # find in get-server-config last valid version of master(awk get line after "validMasterVersions" and print last field)
 mainVersion=`gcloud container get-server-config | awk '/validMasterVersions/ { getline; print $NF }'`
 echo "-- convert to version " $mainVersion
-#gcloud --quiet container clusters upgrade $clusterName --master --cluster-version $mainVersion
+gcloud --quiet container clusters upgrade $clusterName --master --cluster-version $mainVersion
 
 echo "-- Change names with opposite names and saves old names
 --"
