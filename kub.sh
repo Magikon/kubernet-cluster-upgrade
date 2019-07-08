@@ -4,13 +4,9 @@ set -e
 #set -x
 start=`date +%s`
 
-
 clusterName="cluster1"
 zone="us-central1-a"
 region="us-central1"
-
-disksize="100GB"
-diskType="pd-standard"
 
 nodePool1="default-pool"
 nodePool2="fast-pool"
@@ -19,6 +15,25 @@ nodePool3="review-pool"
 IP1="35.192.124.25"
 IP2="35.192.124.25"
 IP3="35.192.124.25"
+
+disksize="100GB"
+diskType="pd-standard"
+
+#create node pool default
+def_machineType="g1-small"
+def_minNodeCount="1"
+def_maxNodeCount="2"
+def_initialNodeCount="2"
+#create node pool fast
+fst_machineType="g1-small"
+fst_minNodeCount="1"
+fst_maxNodeCount="1"
+fst_initialNodeCount="1"
+#create node pool review
+rev_machineType="g1-small"
+rev_minNodeCount="1"
+rev_maxNodeCount="1"
+rev_initialNodeCount="1"
 
 #for multiline use ; as delimiter
 echos()
@@ -118,8 +133,6 @@ echos "Old names of pools is" "$oldpool1" "$oldpool2" "$oldpool3" "-" "New names
 while IFS= read -r line
 do
   case $line in
-    *diskType*)
-      diskType=$(awk '{ print $NF }' <<< "$line") ;;
     *machineType*)
       machineType=$(awk '{ print $NF }' <<< "$line") ;;
     *maxNodeCount*)
@@ -157,8 +170,6 @@ setIP "$IP2" "$nodes2"
 while IFS= read -r line
 do
   case $line in
-    *diskType*)
-      diskType=$(awk '{ print $NF }' <<< "$line") ;;
     *machineType*)
       machineType=$(awk '{ print $NF }' <<< "$line") ;;
     *maxNodeCount*)
@@ -188,8 +199,6 @@ drain "$oldpool2"
 while IFS= read -r line
 do
   case $line in
-    *diskType*)
-      diskType=$(awk '{ print $NF }' <<< "$line") ;;
     *machineType*)
       machineType=$(awk '{ print $NF }' <<< "$line") ;;
     *maxNodeCount*)
@@ -220,12 +229,7 @@ gcloud --quiet container node-pools delete "$oldpool3" --cluster="$clusterName"
 #==================================================================================================================================
 create()
 {
-machineType="g1-small"
-minNodeCount="1"
-maxNodeCount="2"
-initialNodeCount="2"
-
-crNodePool "$nodePool1" "$machineType" "$initialNodeCount" "$minNodeCount" "$maxNodeCount"
+crNodePool "$nodePool1" "$def_machineType" "$def_initialNodeCount" "$def_minNodeCount" "$def_maxNodeCount"
 
 echos "Save node's names of new pool"
 count=1
@@ -246,13 +250,7 @@ setIP "$IP1" "$nodes1"
 setIP "$IP2" "$nodes2"
 
 #------------------------------------------------------------------------------------------------------------------------
-diskType="pd-standard"
-machineType="g1-small"
-minNodeCount="1"
-maxNodeCount="1"
-initialNodeCount="1"
-
-crNodePool "$nodePool2" "$machineType" "$initialNodeCount" "$minNodeCount" "$maxNodeCount" "--node-labels=whitelist=betradar,nodetype=fast --node-taints=fast_node=only:NoSchedule"
+crNodePool "$nodePool2" "$fst_machineType" "$fst_initialNodeCount" "$fst_minNodeCount" "$fst_maxNodeCount" "--node-labels=whitelist=betradar,nodetype=fast --node-taints=fast_node=only:NoSchedule"
 
 echos "Save node's names of new pool"
 count=1
@@ -271,7 +269,7 @@ minNodeCount="1"
 maxNodeCount="1"
 initialNodeCount="1"
 
-crNodePool "$nodePool3" "$machineType" "$initialNodeCount" "$minNodeCount" "$maxNodeCount" "--node-labels=nodetype=review --node-taints=review_node=only:NoSchedule --preemptible"
+crNodePool "$nodePool3" "$rev_machineType" "$rev_initialNodeCount" "$rev_minNodeCount" "$rev_maxNodeCount" "--node-labels=nodetype=review --node-taints=review_node=only:NoSchedule --preemptible"
 }
 #==================================================================================================================================
 delete()
