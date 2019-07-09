@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The script can create pools of nodes, delete all pools of nodes or selectively, update pools of nodes by default or to the latest version.
 set -e
-#set -x
+set -x
 start=`date +%s`
 
 clusterName="cluster1"
@@ -44,7 +44,7 @@ echos()
   for i in "${arr[@]}";do
     echo "-- ""$i"
   done
-  echo "-- "
+  echo "-- " 
 }
 
 helps()
@@ -70,15 +70,15 @@ setIP()
   if [ ! -z "$tempnode" ];
   then 
      echos "Remove " "$ipAddress" " from " "$tempnode"
-     local exNat=`gcloud compute instances describe "$tempnode" --format='value(networkInterfaces[].accessConfigs[].name.list())' | awk -F "'" '{ print $2 }'`
-     gcloud --quiet compute instances delete-access-config "$tempnode" --access-config-name="$exNat";
-     gcloud --quiet compute instances add-access-config "$tempnode" --access-config-name="$exNat";
+     local exNat=`gcloud compute instances describe "$tempnode" --zone="$zone" --format='value(networkInterfaces[].accessConfigs[].name.list())' | awk -F "'" '{ print $2 }'`
+     gcloud --quiet compute instances delete-access-config "$tempnode" --access-config-name="$exNat" --zone="$zone";
+     gcloud --quiet compute instances add-access-config "$tempnode" --access-config-name="$exNat" --zone="$zone";
   fi
 
   echos "Set " "$ipAddress" " to " "$nodeName"
-  exNat=`gcloud compute instances describe "$nodeName" --format='value(networkInterfaces[].accessConfigs[].name.list())' | awk -F "'" '{ print $2 }'`
-  gcloud --quiet compute instances delete-access-config "$nodeName" --access-config-name="$exNat"
-  gcloud --quiet compute instances add-access-config "$nodeName" --access-config-name="$exNat" --address "$ipAddress"
+  exNat=`gcloud compute instances describe "$nodeName" --zone="$zone" --format='value(networkInterfaces[].accessConfigs[].name.list())' | awk -F "'" '{ print $2 }'`
+  gcloud --quiet compute instances delete-access-config "$nodeName" --access-config-name="$exNat" --zone="$zone"
+  gcloud --quiet compute instances add-access-config "$nodeName" --access-config-name="$exNat" --address "$ipAddress" --zone="$zone"
 }
 
 drain()
@@ -98,15 +98,15 @@ drain()
 #==================================================================================================================================
 update()
 {
-mainVersion=`gcloud container get-server-config | awk '/validMasterVersions/ { getline; print $NF }'`
-defaultVersion=`gcloud container get-server-config | awk '/defaultClusterVersion/ { print $NF }'`
+mainVersion=`gcloud container get-server-config --zone="$zone" | awk '/validMasterVersions/ { getline; print $NF }'`
+defaultVersion=`gcloud container get-server-config --zone="$zone" | awk '/defaultClusterVersion/ { print $NF }'`
 if [ "$1" == "latest" ]
 then
   echos "Convert to version " "$mainVersion"
-  gcloud --quiet container clusters upgrade "$clusterName" --master --cluster-version "$mainVersion"
+  gcloud --quiet container clusters upgrade "$clusterName" --master --cluster-version "$mainVersion" --zone="$zone"
 else
   echos "Convert to version " "$defaultVersion"
-  gcloud --quiet container clusters upgrade "$clusterName" --master
+  gcloud --quiet container clusters upgrade "$clusterName" --master --zone="$zone"
 fi
 
 echos "Change names with opposite names and saves old names"
@@ -126,7 +126,7 @@ do
     *review-pool*)
       nodePool3="reviewpool";oldpool3="$line" ;;
   esac
-done < <(gcloud --quiet container node-pools list --cluster="$clusterName" | awk '{if (NR!=1) {print $1}}')
+done < <(gcloud --quiet container node-pools list --cluster="$clusterName" --zone="$zone" | awk '{if (NR!=1) {print $1}}')
 
 echos "Old names of pools is" "$oldpool1" "$oldpool2" "$oldpool3" "-" "New names of pools is" "$nodePool1" "$nodePool2" "$nodePool3"
 #------------------------------------------------------------------------------------------------------------------------
@@ -140,7 +140,7 @@ do
     *minNodeCount*)
       minNodeCount=$(awk '{ print $NF }' <<< "$line") ;;
   esac
-done < <(gcloud container node-pools describe --cluster="$clusterName" "$oldpool1")
+done < <(gcloud container node-pools describe --cluster="$clusterName" --zone="$zone" "$oldpool1")
 
 initialNodeCount=$(kubectl get nodes -l cloud.google.com/gke-nodepool="$oldpool1" -o=name | wc -l)
 
@@ -217,13 +217,13 @@ drain "$oldpool3"
 #------------------------------------------------------------------------------------------------------------------------
 
 echos "Delete old pool " "$oldpool1"
-gcloud --quiet container node-pools delete "$oldpool1" --cluster="$clusterName"
+gcloud --quiet container node-pools delete "$oldpool1" --cluster="$clusterName" --zone="$zone"
 
 echos "Delete old pool " "$oldpool2"
-gcloud --quiet container node-pools delete "$oldpool2" --cluster="$clusterName"
+gcloud --quiet container node-pools delete "$oldpool2" --cluster="$clusterName" --zone="$zone"
 
 echos "Delete old pool " "$oldpool3"
-gcloud --quiet container node-pools delete "$oldpool3" --cluster="$clusterName"
+gcloud --quiet container node-pools delete "$oldpool3" --cluster="$clusterName" --zone="$zone"
 
 }
 #==================================================================================================================================
@@ -263,12 +263,6 @@ done
 setIP "$IP3" "$nodes1"
 
 #------------------------------------------------------------------------------------------------------------------------
-diskType="pd-standard"
-machineType="g1-small"
-minNodeCount="1"
-maxNodeCount="1"
-initialNodeCount="1"
-
 crNodePool "$nodePool3" "$rev_machineType" "$rev_initialNodeCount" "$rev_minNodeCount" "$rev_maxNodeCount" "--node-labels=nodetype=review --node-taints=review_node=only:NoSchedule --preemptible"
 }
 #==================================================================================================================================
@@ -278,17 +272,17 @@ while IFS= read -r line <&3
 do
    if [ "$1" == "all" ]
    then 
-     gcloud --quiet container node-pools delete --cluster=$clusterName "$line"
+     gcloud --quiet container node-pools delete --zone="$zone" --cluster="$clusterName" "$line"
    else
      promts="Delete pool ""$line"" (y/n)?"
      read -n 1 -r -p "$promts" zz
 	 echo
 	 if [[ $zz =~ ^[Yy]$ ]]
 	 then
-	   gcloud --quiet container node-pools delete --cluster=$clusterName "$line"
+	   gcloud --quiet container node-pools delete --zone="$zone" --cluster=$clusterName "$line"
 	 fi
    fi
-done 3< <(gcloud --quiet container node-pools list --cluster=$clusterName | awk '{if (NR!=1) {print $1}}')
+done 3< <(gcloud --quiet container node-pools list --zone="$zone" --cluster=$clusterName | awk '{if (NR!=1) {print $1}}')
 }
 #==================================================================================================================================
 
