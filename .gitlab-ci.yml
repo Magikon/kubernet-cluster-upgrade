@@ -1,0 +1,18 @@
+image: google/cloud-sdk
+
+stages:
+  - operation
+
+kub-operations:
+  stage: operation
+  only:
+    - master
+  script:
+    - echo "$INPLAY_DEPLOY_KEY" > /tmp/key.json
+    - gcloud auth activate-service-account --key-file /tmp/key.json
+    - gcloud config set project $INPLAY_PROJECT
+    - chmod +x kub.sh
+    - ./kub.sh help
+include:
+    - local: /config/test-com.yml
+

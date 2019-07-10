@@ -1,0 +1,23 @@
+variables:
+  CLUSTERNAME: "test-com"
+  ZONEVAR: "europe-west3-b"
+  REGIONVAR: "europe-west3"
+  
+  DISKSIZE: "100GB"
+  DISKTYPE: "pd-standard"
+  
+#create node pool default
+  DEF_MACHINETYPE: "n1-standard-4"
+  DEF_MINNODECOUNT: "4"
+  DEF_MAXNODECOUNT: "8"
+  DEF_INITIALNODECOUNT: "4"
+#create node pool fast
+  FST_MACHINETYPE: "n1-highcpu-4"
+  FST_MINNODECOUNT: "1"
+  FST_MAXNODECOUNT: "1"
+  FST_INITIALNODECOUNT: "1"
+#create node pool review
+  REV_MACHINETYPE: "n1-standard-1"
+  REV_MINNODECOUNT: "1"
+  REV_MAXNODECOUNT: "3"
+  REV_INITIALNODECOUNT: "3"
