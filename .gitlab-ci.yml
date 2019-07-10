@@ -8,9 +8,9 @@ kub-operations:
   only:
     - master
   script:
-    - echo "$INPLAY_DEPLOY_KEY" > /tmp/key.json
+    - echo "$DEPLOY_KEY" > /tmp/key.json
     - gcloud auth activate-service-account --key-file /tmp/key.json
-    - gcloud config set project $INPLAY_PROJECT
+    - gcloud config set project $PROJECT
     - chmod +x kub.sh
     - ./kub.sh help
 include:
